@@ -27,6 +27,9 @@ import javax.net.ssl.SSLEngineResult.Status;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
 
+import com.crittercism.app.Crittercism;
+import com.piazza.android.supp.LogInterface;
+
 /**
  * Implements the relevant portions of the SocketChannel interface with the SSLEngine wrapper.
  */
@@ -102,8 +105,12 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	 * Thats why it's called both from the {@link #read(ByteBuffer)} and {@link #write(ByteBuffer)}
 	 **/
 	private synchronized void processHandshake() throws IOException {
-		if( sslEngine.getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING )
+        LogInterface.d(TAG, "--> processHandshake()");
+        LogInterface.i(TAG, "1 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
+		if( sslEngine.getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING ) {
+	        LogInterface.d(TAG, "<-- processHandshake()");
 			return; // since this may be called either from a reading or a writing thread and because this method is synchronized it is necessary to double check if we are still handshaking.
+		}
 		if( !tasks.isEmpty() ) {
 			Iterator<Future<?>> it = tasks.iterator();
 			while ( it.hasNext() ) {
@@ -113,9 +120,11 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 				} else {
 					if( isBlocking() )
 						consumeFutureUninterruptible( f );
+			        LogInterface.d(TAG, "<-- processHandshake()");
 					return;
 				}
 			}
+	        LogInterface.i(TAG, "2 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 		}
 
 		if( sslEngine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP ) {
@@ -123,31 +132,42 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 				inCrypt.compact();
 				int read = socketChannel.read( inCrypt );
 				if( read == -1 ) {
+			        LogInterface.d(TAG, "*** processHandshake()");
 					throw new IOException( "connection closed unexpectedly by peer" );
 				}
 				inCrypt.flip();
 			}
 			inData.compact();
+	        LogInterface.i(TAG, "3.1 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 			unwrap();
+	        LogInterface.i(TAG, "3.2 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 			if( readEngineResult.getHandshakeStatus() == HandshakeStatus.FINISHED ) {
 				createBuffers( sslEngine.getSession() );
+		        LogInterface.d(TAG, "<-- processHandshake()");
 				return;
 			}
 		}
 		consumeDelegatedTasks();
+        LogInterface.i(TAG, "4 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 		if( tasks.isEmpty() || sslEngine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP ) {
 			socketChannel.write( wrap( emptybuffer ) );
+	        LogInterface.i(TAG, "5 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 			if( writeEngineResult.getHandshakeStatus() == HandshakeStatus.FINISHED ) {
 				createBuffers( sslEngine.getSession() );
+		        LogInterface.d(TAG, "<-- processHandshake()");
 				return;
 			}
 		}
 		assert ( sslEngine.getHandshakeStatus() != HandshakeStatus.NOT_HANDSHAKING );// this function could only leave NOT_HANDSHAKING after createBuffers was called
+        LogInterface.d(TAG, "<-- processHandshake()");
 	}
+	
 	private synchronized ByteBuffer wrap( ByteBuffer b ) throws SSLException {
+	    LogInterface.d(TAG, "--> wrap()");
 		outCrypt.compact();
 		writeEngineResult = sslEngine.wrap( b, outCrypt );
 		outCrypt.flip();
+        LogInterface.d(TAG, "<-- wrap()");
 		return outCrypt;
 	}
 
@@ -172,7 +192,10 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		}
 	}
 
+	public static final String TAG = "SSLSocketChannel2";
+	
 	protected void createBuffers( SSLSession session ) {
+        LogInterface.e(TAG, "--> createBuffers()");
 		int appBufferMax = session.getApplicationBufferSize();
 		int netBufferMax = session.getPacketBufferSize();
 
@@ -195,15 +218,19 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		outCrypt.rewind();
 		outCrypt.flip();
 		bufferallocations++;
+        LogInterface.e(TAG, "<-- createBuffers()");
 	}
 
 	public int write( ByteBuffer src ) throws IOException {
+        LogInterface.d(TAG, "--> write()");
 		if( !isHandShakeComplete() ) {
 			processHandshake();
+	        LogInterface.d(TAG, "<-- write()");
 			return 0;
 		}
 		assert ( bufferallocations > 1 );
 		int num = socketChannel.write( wrap( src ) );
+        LogInterface.d(TAG, "<-- write()");
 		return num;
 
 	}
@@ -215,8 +242,17 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	 * @return the number of bytes read.
 	 **/
 	public int read( ByteBuffer dst ) throws IOException {
-		if( !dst.hasRemaining() )
+        LogInterface.d(TAG, "--> read()");
+        if (Thread.currentThread().getStackTrace().length >= 40) {
+            Crittercism.logHandledException(new Throwable("Averted stack overflow!"));
+            LogInterface.e("SSLSocketChannel2", "Averted stack overflow!");
+            LogInterface.d(TAG, "<-- read()");
+            return -1;
+        }
+		if( !dst.hasRemaining() ) {
+	        LogInterface.d(TAG, "<-- read()");
 			return 0;
+		}
 		if( !isHandShakeComplete() ) {
 			if( isBlocking() ) {
 				while ( !isHandShakeComplete() ) {
@@ -225,6 +261,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 			} else {
 				processHandshake();
 				if( !isHandShakeComplete() ) {
+			        LogInterface.d(TAG, "<-- read()");
 					return 0;
 				}
 			}
@@ -234,9 +271,11 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		 * 2. When "inCrypt" contains more data than "inData" has remaining space, unwrap has to be called on more time(readRemaining)
 		 */
 		int purged = readRemaining( dst );
-		if( purged != 0 )
+		if( purged != 0 ) {
+	        LogInterface.d(TAG, "<-- read()");
 			return purged;
-
+		}
+		
 		/* We only continue when we really need more data from the network.
 		 * Thats the case if inData is empty or inCrypt holds to less data than necessary for decryption
 		 */
@@ -250,6 +289,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 
 		if( isBlocking() || readEngineResult.getStatus() == Status.BUFFER_UNDERFLOW )
 			if( socketChannel.read( inCrypt ) == -1 ) {
+		        LogInterface.d(TAG, "<-- read()");
 				return -1;
 			}
 		inCrypt.flip();
@@ -257,8 +297,11 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 
 		int transfered = transfereTo( inData, dst );
 		if( transfered == 0 && isBlocking() ) {
-			return read( dst ); // "transfered" may be 0 when not enough bytes were received or during rehandshaking
+			int red = read( dst ); // "transfered" may be 0 when not enough bytes were received or during rehandshaking
+	        LogInterface.d(TAG, "<-- read()");
+	        return red;
 		}
+        LogInterface.d(TAG, "<-- read()");
 		return transfered;
 	}
 	/**
