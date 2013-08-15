@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft;
 import org.java_websocket.drafts.Draft.CloseHandshakeType;
 import org.java_websocket.drafts.Draft.HandshakeState;
@@ -157,7 +158,12 @@ public class WebSocketImpl implements WebSocket {
 			System.out.println( "process(" + socketBuffer.remaining() + "): {" + ( socketBuffer.remaining() > 1000 ? "too big to display" : new String( socketBuffer.array(), socketBuffer.position(), socketBuffer.remaining() ) ) + "}" );
 
 		if( readystate == READYSTATE.OPEN ) {
+		    int before = socketBuffer.remaining();
 			decodeFrames( socketBuffer );
+			int after = socketBuffer.remaining();
+			if (wsl instanceof WebSocketClient) {
+			    ((WebSocketClient) wsl).dataTotal += (before - after);
+			}
 		} else {
 			if( decodeHandshake( socketBuffer ) ) {
 				assert ( tmpHandshakeBytes.hasRemaining() != socketBuffer.hasRemaining() || !socketBuffer.hasRemaining() ); // the buffers will never have remaining bytes at the same time
@@ -318,7 +324,9 @@ public class WebSocketImpl implements WebSocket {
 		List<Framedata> frames;
 		try {
 			frames = draft.translateFrame( socketBuffer );
+			if (wsl instanceof WebSocketClient) ((WebSocketClient) wsl).framesTotal1 += frames.size();
 			for( Framedata f : frames ) {
+	            if (wsl instanceof WebSocketClient) ((WebSocketClient) wsl).framesTotal2++;
 				if( DEBUG )
 					System.out.println( "matched frame: " + f );
 				if( flushandclosestate )
@@ -347,6 +355,7 @@ public class WebSocketImpl implements WebSocket {
 					continue;
 				} else if( curop == Opcode.PING ) {
 					wsl.onWebsocketPing( this, f );
+					if (wsl instanceof WebSocketClient) ((WebSocketClient) wsl).lastTimePong = System.currentTimeMillis();
 					continue;
 				} else if( curop == Opcode.PONG ) {
 					wsl.onWebsocketPong( this, f );

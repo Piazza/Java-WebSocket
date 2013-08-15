@@ -41,7 +41,12 @@ import org.java_websocket.handshake.ServerHandshake;
  * @author Nathan Rajlich
  */
 public abstract class WebSocketClient extends WebSocketAdapter implements Runnable, WebSocket {
-
+    public volatile int framesTotal1 = 0;
+    public volatile int framesTotal2 = 0;
+    public volatile int dataTotal = 0;
+    public volatile long timeConnect = 0;
+    public volatile long lastTimePong = 0;
+    
 	/**
 	 * The URI this channel is supposed to connect to.
 	 */

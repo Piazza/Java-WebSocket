@@ -6,6 +6,9 @@
 package org.java_websocket;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -145,6 +148,9 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	        LogInterface.i(TAG, "3.1 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
 			unwrap();
 	        LogInterface.i(TAG, "3.2 " + sslEngine.getHandshakeStatus() + " : " + readEngineResult.getHandshakeStatus() + " : " + writeEngineResult.getHandshakeStatus());
+	        if (sslEngine.getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING) {
+	            LogInterface.i(TAG, "Not handshaking!");
+	        }
 			if( readEngineResult.getHandshakeStatus() == HandshakeStatus.FINISHED ) {
 				createBuffers( sslEngine.getSession() );
 		        LogInterface.d(TAG, "<-- processHandshake()");
@@ -169,11 +175,11 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	}
 	
 	private synchronized ByteBuffer wrap( ByteBuffer b ) throws SSLException {
-	    LogInterface.d(TAG, "--> wrap()");
+	    //LogInterface.d(TAG, "--> wrap()");
 		outCrypt.compact();
 		writeEngineResult = sslEngine.wrap( b, outCrypt );
 		outCrypt.flip();
-        LogInterface.d(TAG, "<-- wrap()");
+        //LogInterface.d(TAG, "<-- wrap()");
 		return outCrypt;
 	}
 
@@ -184,6 +190,32 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		int rem;
 		do {
 			rem = inData.remaining();
+			
+			boolean isDebug = false;
+			LogInterface.d(TAG, "DEBUG?" + isDebug);
+			if (isDebug) {
+			    try {
+	                Class<?> cSE = sslEngine.getClass();
+                    Field fRP = cSE.getDeclaredField("recordProtocol");
+                    fRP.setAccessible(true);
+                    Object recordProtocol = fRP.get(sslEngine);
+                    Class<?> cRP = recordProtocol.getClass();
+                    Method mGDS = cRP.getDeclaredMethod("getDataSize", Integer.TYPE);
+                    mGDS.setAccessible(true);
+                    mGDS.invoke(recordProtocol, inCrypt.remaining());
+                } catch (NoSuchFieldException e) {
+                    e.printStackTrace();
+                } catch (IllegalArgumentException e) {
+                    e.printStackTrace();
+                } catch (IllegalAccessException e) {
+                    e.printStackTrace();
+                } catch (NoSuchMethodException e) {
+                    e.printStackTrace();
+                } catch (InvocationTargetException e) {
+                    e.printStackTrace();
+                }
+			}
+			
 			readEngineResult = sslEngine.unwrap( inCrypt, inData );
 		} while ( readEngineResult.getStatus() == SSLEngineResult.Status.OK && ( rem != inData.remaining() || sslEngine.getHandshakeStatus() == HandshakeStatus.NEED_UNWRAP ) );
 		inData.flip();
@@ -205,6 +237,8 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		int appBufferMax = session.getApplicationBufferSize();
 		int netBufferMax = session.getPacketBufferSize();
 		LogInterface.d(TAG, "net " + netBufferMax + " : " + "app " + appBufferMax);
+		appBufferMax = Math.max(appBufferMax, netBufferMax);
+        LogInterface.d(TAG, "net " + netBufferMax + " : " + "app " + appBufferMax);
 		
 		if( inData == null ) {
 			inData = ByteBuffer.allocate( appBufferMax );
@@ -229,18 +263,18 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	}
 
 	public int write( ByteBuffer src ) throws IOException {
-        LogInterface.d(TAG, "--> write()");
+        //LogInterface.d(TAG, "--> write()");
 		if( !isHandShakeComplete() ) {
 			processHandshake();
-	        LogInterface.d(TAG, "<-- write()");
+	        //LogInterface.d(TAG, "<-- write()");
 			return 0;
 		}
 		// assert ( bufferallocations > 1 ); //see #190
-		if( bufferallocations <= 1 ) {
-			createBuffers( sslEngine.getSession() );
-		}
+//		if( bufferallocations <= 1 ) {
+//			createBuffers( sslEngine.getSession() );
+//		}
 		int num = socketChannel.write( wrap( src ) );
-        LogInterface.d(TAG, "<-- write()");
+        //LogInterface.d(TAG, "<-- write() : " + num);
 		return num;
 
 	}
@@ -277,9 +311,9 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 			}
 		}
 		// assert ( bufferallocations > 1 ); //see #190
-		if( bufferallocations <= 1 ) {
-			createBuffers( sslEngine.getSession() );
-		}
+//		if( bufferallocations <= 1 ) {
+//			createBuffers( sslEngine.getSession() );
+//		}
 		/* 1. When "dst" is smaller than "inData" readRemaining will fill "dst" with data decoded in a previous read call.
 		 * 2. When "inCrypt" contains more data than "inData" has remaining space, unwrap has to be called on more time(readRemaining)
 		 */
