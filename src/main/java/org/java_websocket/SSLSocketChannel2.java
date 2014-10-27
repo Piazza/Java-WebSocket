@@ -30,7 +30,7 @@ import javax.net.ssl.SSLEngineResult.Status;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
 
-import com.crittercism.app.Crittercism;
+import com.crashlytics.android.Crashlytics;
 import com.piazza.android.supp.LogInterface;
 
 /**
@@ -288,7 +288,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	public int read( ByteBuffer dst ) throws IOException {
         LogInterface.d(TAG, "--> read()");
         if (Thread.currentThread().getStackTrace().length >= 40) {
-            Crittercism.logHandledException(new Throwable("Averted stack overflow!"));
+            Crashlytics.logException(new Throwable("Averted stack overflow!"));
             LogInterface.e("SSLSocketChannel2", "Averted stack overflow!");
             LogInterface.d(TAG, "<-- read()");
             return -1;
